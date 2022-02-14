@@ -92,20 +92,30 @@ class Alice(YaoGarbler):
 
 		print(f"======== {circuit['id']} ========")
 
-		bits_a = [1, 1, 1, 1]
-		print("bits_a", bits_a)
+		# Generate and hash Alice's emails
+		# TODO: Allow to be input
+		emails = util.get_emails(1)
+		hashes = util.hash_emails(emails)
 
-		# Map Alice's wires to (key, encr_bit)
-		for i in range(len(a_wires)):
-			a_inputs[a_wires[i]] = (keys[a_wires[i]][bits_a[i]],
-									pbits[a_wires[i]] ^ bits_a[i])
+		for h in hashes:
+			decimal = int(h.hexdigest(), 16)
+			binary = format(decimal, 'b').zfill(len(a_wires))
+			bits_a = [int(b) for b in binary[:len(a_wires)]]
 
-		# Send Alice's encrypted inputs and keys to Bob
-		result = self.ot.get_result(a_inputs, b_keys)
+			# assert len(binary) == len(bits_a), "Email hash was truncated!"
+			print("bits_a", bits_a)
 
-		# Print results (output wires)
-		str_result = ' '.join([str(result[w]) for w in outputs])
-		print(str_result)
+			# Map Alice's wires to (key, encr_bit)
+			for i in range(len(a_wires)):
+				a_inputs[a_wires[i]] = (keys[a_wires[i]][bits_a[i]],
+										pbits[a_wires[i]] ^ bits_a[i])
+
+			# Send Alice's encrypted inputs and keys to Bob
+			result = self.ot.get_result(a_inputs, b_keys)
+
+			# Print results (output wires)
+			str_result = ' '.join([str(result[w]) for w in outputs])
+			print(str_result)
 
 	def print_tt(self, entry):
 		"""Print circuit evaluation for *all* Bob and Alice inputs.
@@ -196,16 +206,25 @@ class Bob:
 
 		print(f"Received {circuit['id']}")
 
-		bits_b = [1, 1, 1, 1] #TODO: Hash of email
-		print("bits_b", bits_b)
+		# Generate and hash Bob's emails
+		# TODO: Allow to be input
+		emails = util.get_emails(1)
+		hashes = util.hash_emails(emails)
 
-		b_inputs_clear = {
-			b_wires[i]: bits_b[i]
-			for i in range(len(b_wires))
-		}
+		for h in hashes:
+			decimal = int(h.hexdigest(), 16)
+			binary = format(decimal, 'b').zfill(len(b_wires))
+			bits_b = [int(b) for b in binary[:len(b_wires)]]
 
-		# Evaluate and send result to Alice
-		self.ot.send_result(circuit, garbled_tables, pbits_out, b_inputs_clear)
+			print("bits_b", bits_b)
+
+			b_inputs_clear = {
+				b_wires[i]: bits_b[i]
+				for i in range(len(b_wires))
+			}
+
+			# Evaluate and send result to Alice
+			self.ot.send_result(circuit, garbled_tables, pbits_out, b_inputs_clear)
 
 	def send_evaluation_tt(self, entry):
 		"""Evaluate yao circuit for *all* Bob and Alice's inputs and

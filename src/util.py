@@ -4,6 +4,8 @@ import random
 import secrets
 import sympy
 import zmq
+import faker
+import hashlib
 
 # SOCKET
 LOCAL_PORT = 4080
@@ -123,3 +125,16 @@ class PrimeGroup:
 def parse_json(json_path):
     with open(json_path) as json_file:
         return json.load(json_file)
+
+def get_emails(num_emails):
+	fake = faker.Faker('en_US')
+	emails = []
+	for _ in range(num_emails):
+		emails.append(fake.unique.free_email())
+	return emails
+
+def hash_emails(emails):
+	hashed = []
+	for e in emails:
+		hashed.append(hashlib.sha256(e.encode()))
+	return hashed
