@@ -28,10 +28,11 @@ Code is written for **Python 3.6+**. Dependencies are:
 * **ZeroMQ** for communications
 * **Fernet** for encryption of garbled tables
 * **SymPy** for prime number manipulation
+* **Faker** for random email generation
 
 Install all dependencies:
 ```sh
-pip3 install --user pyzmq cryptography sympy
+pip3 install --user pyzmq cryptography sympy faker
 ```
 
 Clone this repository wherever you want and follow the instructions in next
