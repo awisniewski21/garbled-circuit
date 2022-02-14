@@ -51,10 +51,11 @@ class Alice(YaoGarbler):
 		oblivious_transfer: Optional; enable the Oblivious Transfer protocol
 			(True by default).
 	"""
-	def __init__(self, circuits, oblivious_transfer=True):
+	def __init__(self, circuits, oblivious_transfer=True, truth_table=False):
 		super().__init__(circuits)
 		self.socket = util.GarblerSocket()
 		self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
+		self.tt = truth_table
 
 	def start(self):
 		"""Start Yao protocol."""
@@ -66,10 +67,48 @@ class Alice(YaoGarbler):
 			}
 			logging.debug(f"Sending {circuit['circuit']['id']}")
 			self.socket.send_wait(to_send)
-			self.print(circuit)
+			if (self.tt):
+				self.print_tt(circuit)
+			else:
+				self.print(circuit)
 
 	def print(self, entry):
-		"""Print circuit evaluation for all Bob and Alice inputs.
+		"""Print circuit evaluation for Bob and Alice inputs.
+
+		Args:
+			entry: A dict representing the circuit to evaluate.
+		"""
+
+		circuit, pbits, keys = entry["circuit"], entry["pbits"], entry["keys"]
+		outputs = circuit["out"]
+		a_wires = circuit.get("alice", [])  # Alice's wires
+		a_inputs = {}  # map from Alice's wires to (key, encr_bit) inputs
+		b_wires = circuit.get("bob", [])  # Bob's wires
+		b_keys = {  # map from Bob's wires to a pair (key, encr_bit)
+			w: self._get_encr_bits(pbits[w], key0, key1)
+			for w, (key0, key1) in keys.items() if w in b_wires
+		}
+		N = len(a_wires) + len(b_wires)
+
+		print(f"======== {circuit['id']} ========")
+
+		bits_a = [1, 1, 1, 1]
+		print("bits_a", bits_a)
+
+		# Map Alice's wires to (key, encr_bit)
+		for i in range(len(a_wires)):
+			a_inputs[a_wires[i]] = (keys[a_wires[i]][bits_a[i]],
+									pbits[a_wires[i]] ^ bits_a[i])
+
+		# Send Alice's encrypted inputs and keys to Bob
+		result = self.ot.get_result(a_inputs, b_keys)
+
+		# Print results (output wires)
+		str_result = ' '.join([str(result[w]) for w in outputs])
+		print(str_result)
+
+	def print_tt(self, entry):
+		"""Print circuit evaluation for *all* Bob and Alice inputs.
 
 		Args:
 			entry: A dict representing the circuit to evaluate.
@@ -124,9 +163,10 @@ class Bob:
 		oblivious_transfer: Optional; enable the Oblivious Transfer protocol
 			(True by default).
 	"""
-	def __init__(self, oblivious_transfer=True):
+	def __init__(self, oblivious_transfer=True, truth_table=False):
 		self.socket = util.EvaluatorSocket()
 		self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
+		self.tt = truth_table
 
 	def listen(self):
 		"""Start listening for Alice messages."""
@@ -134,12 +174,41 @@ class Bob:
 		try:
 			for entry in self.socket.poll_socket():
 				self.socket.send(True)
-				self.send_evaluation(entry)
+				if (self.tt):
+					self.send_evaluation_tt(entry)
+				else:
+					self.send_evaluation(entry)
 		except KeyboardInterrupt:
 			logging.info("Stop listening")
 
 	def send_evaluation(self, entry):
-		"""Evaluate yao circuit for all Bob and Alice's inputs and
+		"""Evaluate yao circuit for Bob and Alice's inputs and
+		send back the results.
+
+		Args:
+			entry: A dict representing the circuit to evaluate.
+		"""
+		circuit, pbits_out = entry["circuit"], entry["pbits_out"]
+		garbled_tables = entry["garbled_tables"]
+		a_wires = circuit.get("alice", [])  # list of Alice's wires
+		b_wires = circuit.get("bob", [])  # list of Bob's wires
+		N = len(a_wires) + len(b_wires)
+
+		print(f"Received {circuit['id']}")
+
+		bits_b = [1, 1, 1, 1] #TODO: Hash of email
+		print("bits_b", bits_b)
+
+		b_inputs_clear = {
+			b_wires[i]: bits_b[i]
+			for i in range(len(b_wires))
+		}
+
+		# Evaluate and send result to Alice
+		self.ot.send_result(circuit, garbled_tables, pbits_out, b_inputs_clear)
+
+	def send_evaluation_tt(self, entry):
+		"""Evaluate yao circuit for *all* Bob and Alice's inputs and
 		send back the results.
 
 		Args:
@@ -259,14 +328,15 @@ def main(
 	oblivious_transfer=True,
 	print_mode="circuit",
 	loglevel=logging.WARNING,
+	truth_table=False,
 ):
 	logging.getLogger().setLevel(loglevel)
 
 	if party == "alice":
-		alice = Alice(circuit_path, oblivious_transfer=oblivious_transfer)
+		alice = Alice(circuit_path, oblivious_transfer=oblivious_transfer, truth_table=truth_table)
 		alice.start()
 	elif party == "bob":
-		bob = Bob(oblivious_transfer=oblivious_transfer)
+		bob = Bob(oblivious_transfer=oblivious_transfer, truth_table=truth_table)
 		bob.listen()
 	elif party == "local":
 		local = LocalTest(circuit_path, print_mode=print_mode)
@@ -313,6 +383,9 @@ if __name__ == '__main__':
 							choices=loglevels.keys(),
 							default="warning",
 							help="the log level (default 'warning')")
+		parser.add_argument("--truth-table",
+							action="store_true",
+							help="print truth table for circuit")
 
 		main(
 			party=parser.parse_args().party,
@@ -320,6 +393,7 @@ if __name__ == '__main__':
 			oblivious_transfer=not parser.parse_args().no_oblivious_transfer,
 			print_mode=parser.parse_args().m,
 			loglevel=loglevels[parser.parse_args().loglevel],
+			truth_table=parser.parse_args().truth_table
 		)
 
 	init()
