@@ -126,11 +126,17 @@ def parse_json(json_path):
     with open(json_path) as json_file:
         return json.load(json_file)
 
-def get_emails(num_emails):
+def get_emails(num_emails, seed=None):
 	fake = faker.Faker('en_US')
+	if seed is not None:
+		faker.Faker.seed(seed)
 	emails = []
-	for _ in range(num_emails):
-		emails.append(fake.unique.free_email())
+
+	while len(emails) < num_emails:
+		e = fake.unique.free_email()
+		if random.choice([True, False]):
+			emails.append(e)
+
 	return emails
 
 def hash_emails(emails):

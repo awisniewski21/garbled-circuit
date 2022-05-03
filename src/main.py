@@ -51,11 +51,15 @@ class Alice(YaoGarbler):
 		oblivious_transfer: Optional; enable the Oblivious Transfer protocol
 			(True by default).
 	"""
-	def __init__(self, circuits, oblivious_transfer=True, truth_table=False):
+	def __init__(self, circuits, oblivious_transfer=True, truth_table=False, num_emails=5):
 		super().__init__(circuits)
 		self.socket = util.GarblerSocket()
 		self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
 		self.tt = truth_table
+		self.num_e = int(num_emails)
+
+		self.emails = util.get_emails(self.num_e, 0)
+		self.h_emails = util.hash_emails(self.emails)
 
 	def start(self):
 		"""Start Yao protocol."""
@@ -74,48 +78,57 @@ class Alice(YaoGarbler):
 
 	def print(self, entry):
 		"""Print circuit evaluation for Bob and Alice inputs.
-
 		Args:
 			entry: A dict representing the circuit to evaluate.
 		"""
+		print(f"======== Alice's Emails ========")
+		print(self.emails)
+		print("")
 
-		circuit, pbits, keys = entry["circuit"], entry["pbits"], entry["keys"]
-		outputs = circuit["out"]
-		a_wires = circuit.get("alice", [])  # Alice's wires
-		a_inputs = {}  # map from Alice's wires to (key, encr_bit) inputs
-		b_wires = circuit.get("bob", [])  # Bob's wires
-		b_keys = {  # map from Bob's wires to a pair (key, encr_bit)
-			w: self._get_encr_bits(pbits[w], key0, key1)
-			for w, (key0, key1) in keys.items() if w in b_wires
-		}
-		N = len(a_wires) + len(b_wires)
+		sum = 0
+		round = 1
+		for e_ix, h in enumerate(self.h_emails):
+			for _ in range(len(self.h_emails)):
+				circuit, pbits, keys = entry["circuit"], entry["pbits"], entry["keys"]
+				outputs = circuit["out"]
+				a_wires = circuit.get("alice", [])  # Alice's wires
+				a_inputs = {}  # map from Alice's wires to (key, encr_bit) inputs
+				b_wires = circuit.get("bob", [])  # Bob's wires
+				b_keys = {  # map from Bob's wires to a pair (key, encr_bit)
+					w: self._get_encr_bits(pbits[w], key0, key1)
+					for w, (key0, key1) in keys.items() if w in b_wires
+				}
+				N = len(a_wires) + len(b_wires)
 
-		print(f"======== {circuit['id']} ========")
+				print(f"======== Round: {round} ========")
+				print(f"Sending {circuit['id']} circuit")
+				print("Comparing with:", self.emails[e_ix])
 
-		# Generate and hash Alice's emails
-		# TODO: Allow to be input
-		emails = util.get_emails(1)
-		hashes = util.hash_emails(emails)
+				decimal = int(h.hexdigest(), 16)
+				binary = format(decimal, 'b').zfill(len(a_wires))
+				bits_a = [int(b) for b in binary[:len(a_wires)]]
 
-		for h in hashes:
-			decimal = int(h.hexdigest(), 16)
-			binary = format(decimal, 'b').zfill(len(a_wires))
-			bits_a = [int(b) for b in binary[:len(a_wires)]]
+				# assert len(binary) == len(bits_a), "Email hash was truncated!"
 
-			# assert len(binary) == len(bits_a), "Email hash was truncated!"
-			print("bits_a", bits_a)
+				# Map Alice's wires to (key, encr_bit)
+				for i in range(len(a_wires)):
+					a_inputs[a_wires[i]] = (keys[a_wires[i]][bits_a[i]],
+											pbits[a_wires[i]] ^ bits_a[i])
 
-			# Map Alice's wires to (key, encr_bit)
-			for i in range(len(a_wires)):
-				a_inputs[a_wires[i]] = (keys[a_wires[i]][bits_a[i]],
-										pbits[a_wires[i]] ^ bits_a[i])
+				# Send Alice's encrypted inputs and keys to Bob
+				result = self.ot.get_result(a_inputs, b_keys)
 
-			# Send Alice's encrypted inputs and keys to Bob
-			result = self.ot.get_result(a_inputs, b_keys)
+				# Print results (output wires)
+				str_result = ' '.join([str(result[w]) for w in outputs])
+				print("Result:", str_result)
+				print("")
 
-			# Print results (output wires)
-			str_result = ' '.join([str(result[w]) for w in outputs])
-			print(str_result)
+				sum += int(str_result)
+				round += 1
+
+		print(f"======== Result ========")
+		print("Total emails in common:", sum)
+
 
 	def print_tt(self, entry):
 		"""Print circuit evaluation for *all* Bob and Alice inputs.
@@ -173,10 +186,14 @@ class Bob:
 		oblivious_transfer: Optional; enable the Oblivious Transfer protocol
 			(True by default).
 	"""
-	def __init__(self, oblivious_transfer=True, truth_table=False):
+	def __init__(self, oblivious_transfer=True, truth_table=False, num_emails=5):
 		self.socket = util.EvaluatorSocket()
 		self.ot = ot.ObliviousTransfer(self.socket, enabled=oblivious_transfer)
 		self.tt = truth_table
+		self.num_e = int(num_emails)
+
+		self.emails = util.get_emails(self.num_e, 0)
+		self.h_emails = util.hash_emails(self.emails)
 
 	def listen(self):
 		"""Start listening for Alice messages."""
@@ -194,37 +211,40 @@ class Bob:
 	def send_evaluation(self, entry):
 		"""Evaluate yao circuit for Bob and Alice's inputs and
 		send back the results.
-
 		Args:
 			entry: A dict representing the circuit to evaluate.
 		"""
-		circuit, pbits_out = entry["circuit"], entry["pbits_out"]
-		garbled_tables = entry["garbled_tables"]
-		a_wires = circuit.get("alice", [])  # list of Alice's wires
-		b_wires = circuit.get("bob", [])  # list of Bob's wires
-		N = len(a_wires) + len(b_wires)
+		print(f"======== Bob's Emails ========")
+		print(self.emails)
+		print("")
 
-		print(f"Received {circuit['id']}")
+		round = 1
+		for _ in range(len(self.h_emails)):
+			for e_ix, h in enumerate(self.h_emails):
+				circuit, pbits_out = entry["circuit"], entry["pbits_out"]
+				garbled_tables = entry["garbled_tables"]
+				a_wires = circuit.get("alice", [])  # list of Alice's wires
+				b_wires = circuit.get("bob", [])  # list of Bob's wires
+				N = len(a_wires) + len(b_wires)
 
-		# Generate and hash Bob's emails
-		# TODO: Allow to be input
-		emails = util.get_emails(1)
-		hashes = util.hash_emails(emails)
+				print(f"======== Round: {round} ========")
+				print(f"Received {circuit['id']} circuit")
+				print("Comparing with:", self.emails[e_ix])
+				print("")
 
-		for h in hashes:
-			decimal = int(h.hexdigest(), 16)
-			binary = format(decimal, 'b').zfill(len(b_wires))
-			bits_b = [int(b) for b in binary[:len(b_wires)]]
+				decimal = int(h.hexdigest(), 16)
+				binary = format(decimal, 'b').zfill(len(b_wires))
+				bits_b = [int(b) for b in binary[:len(b_wires)]]
 
-			print("bits_b", bits_b)
+				b_inputs_clear = {
+					b_wires[i]: bits_b[i]
+					for i in range(len(b_wires))
+				}
 
-			b_inputs_clear = {
-				b_wires[i]: bits_b[i]
-				for i in range(len(b_wires))
-			}
+				# Evaluate and send result to Alice
+				self.ot.send_result(circuit, garbled_tables, pbits_out, b_inputs_clear)
+				round += 1
 
-			# Evaluate and send result to Alice
-			self.ot.send_result(circuit, garbled_tables, pbits_out, b_inputs_clear)
 
 	def send_evaluation_tt(self, entry):
 		"""Evaluate yao circuit for *all* Bob and Alice's inputs and
@@ -348,14 +368,15 @@ def main(
 	print_mode="circuit",
 	loglevel=logging.WARNING,
 	truth_table=False,
+	num_emails=5
 ):
 	logging.getLogger().setLevel(loglevel)
 
 	if party == "alice":
-		alice = Alice(circuit_path, oblivious_transfer=oblivious_transfer, truth_table=truth_table)
+		alice = Alice(circuit_path, oblivious_transfer=oblivious_transfer, truth_table=truth_table, num_emails=num_emails)
 		alice.start()
 	elif party == "bob":
-		bob = Bob(oblivious_transfer=oblivious_transfer, truth_table=truth_table)
+		bob = Bob(oblivious_transfer=oblivious_transfer, truth_table=truth_table, num_emails=num_emails)
 		bob.listen()
 	elif party == "local":
 		local = LocalTest(circuit_path, print_mode=print_mode)
@@ -405,6 +426,11 @@ if __name__ == '__main__':
 		parser.add_argument("--truth-table",
 							action="store_true",
 							help="print truth table for circuit")
+		parser.add_argument("-e",
+							"--emails",
+							metavar="num_emails",
+							default=5,
+							help="how many emails should the party have")
 
 		main(
 			party=parser.parse_args().party,
@@ -412,7 +438,8 @@ if __name__ == '__main__':
 			oblivious_transfer=not parser.parse_args().no_oblivious_transfer,
 			print_mode=parser.parse_args().m,
 			loglevel=loglevels[parser.parse_args().loglevel],
-			truth_table=parser.parse_args().truth_table
+			truth_table=parser.parse_args().truth_table,
+			num_emails=parser.parse_args().emails
 		)
 
 	init()
