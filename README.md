@@ -4,6 +4,7 @@
 * [Introduction](#introduction)
 * [Installation](#installation)
 * [Usage](#usage)
+* [PSI Additions*](#psi-additions)
 * [Architecture](#architecture)
 * [JSON circuit](#json-circuit)
 * [Example](#example)
@@ -71,6 +72,16 @@ To print a clear representation of the garbled tables of a circuit:
 ```sh
 ./main.py local -c <circuit.json> -m table
 ```
+
+## PSI Additions*
+
+To run an example PSI circuit, execute the following commands in two separate terminals:
+```sh
+./main.py bob # Run Bob side
+./main.py alice -c circuits/cmp256.json  # Run Alice side
+```
+
+Additionally, you can specify the number of emails using the `-e` parameter. In the current implementation, this number must be the same for both Alice and Bob. 
 
 ## Architecture
 The project is composed of 4 python files:
@@ -175,3 +186,6 @@ GATE: 7, TYPE: OR
 ## Authors
 * Olivier Roques: <olivier@oroques.dev>
 * Emmanuelle Risson: <ear3218@imperial.ac.uk>
+
+## Additional Contributors
+* AJ Wisniewski: <austinw6@illinois.edu>
