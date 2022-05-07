@@ -16,7 +16,7 @@ This project implements a
 using
 [Yao's garbled circuit](https://en.wikipedia.org/wiki/Garbled_circuit)
 protocol. It has been started on November 2018 for the Privacy Engineering
-course of Imperial College London (CO408) and refactored on November 2020.
+course of Imperial College London (CO408) and refactored on November 2020. It was forked and amended to support an application to private set intersection (PSI) by AJ Wisniewski in February 2022. 
 
 In our model, two parties Alice and Bob compute a function on their inputs
 without sharing the value of their inputs with the opposing party. Alice is
